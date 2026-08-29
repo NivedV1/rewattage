@@ -50,6 +50,8 @@ namespace DeviceManager {
     public int32? charge_cycles { get; set; }
     public uint32? charge_start_threshold { get; set; }
     public uint32? charge_end_threshold { get; set; }
+    public bool charge_threshold_supported { get; set; }
+    public bool charge_threshold_enabled { get; set; }
 
     public bool has_history { get; set; }
     public int64? time_to_empty { get; set; }
@@ -216,8 +218,10 @@ namespace DeviceManager {
       device.voltage_min_design = positive_double (upower_proxy.voltage_min_design);
       device.charge_cycles = positive_int32 (upower_proxy.charge_cycles);
 
-      if (upower_proxy.charge_threshold_enabled &&
-          upower_proxy.charge_threshold_supported) {
+      device.charge_threshold_supported = upower_proxy.charge_threshold_supported;
+      device.charge_threshold_enabled = upower_proxy.charge_threshold_enabled;
+
+      if (device.charge_threshold_supported) {
         device.charge_start_threshold = positive_uint32 (upower_proxy.charge_start_threshold);
         device.charge_end_threshold = positive_uint32 (upower_proxy.charge_end_threshold);
       }

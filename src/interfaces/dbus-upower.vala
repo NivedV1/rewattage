@@ -57,6 +57,9 @@ namespace DBusInterface {
             [DBus (name = "ChargeThresholdSupported")]          public abstract bool charge_threshold_supported { owned get; }
             [DBus (name = "ChargeThresholdSettingsSupported")]  public abstract uint32 charge_threshold_settings_supported { owned get; }
 
+            [DBus (name = "EnableChargeThreshold")]
+            public abstract void enable_charge_threshold (bool enable) throws DBusError, IOError;
+
             [DBus (name = "HasHistory")]                        public abstract bool has_history { owned get; }
             [DBus (name = "HasStatistics")]                     public abstract bool has_statistics { owned get; }
             [DBus (name = "Online")]                            public abstract bool online { owned get; }

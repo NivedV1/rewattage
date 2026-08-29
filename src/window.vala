@@ -101,6 +101,9 @@ private class DeviceRow : Gtk.ListBoxRow {
 /* This class inherits from `Gtk.Box`.
  * Used as a constructor for a single section in the device information view.
  */
+public delegate void ToggleCallback (bool active);
+public delegate void SpinCallback (double value);
+
 private class DeviceInfoSection : Gtk.Box {
   public string title { get; private set; }
   private Gtk.ListBox list { private get; private set; }
@@ -130,12 +133,34 @@ private class DeviceInfoSection : Gtk.Box {
       this.list.remove (row);
 
     foreach (DeviceInfoSectionData.DeviceProperty property in properties) {
-      Adw.ActionRow action_row = new Adw.ActionRow ();
-      action_row.set_title (property.name);
-      action_row.set_subtitle (property.value);
-      action_row.set_subtitle_selectable (true);
-      action_row.set_css_classes ({ "property", "monospace" });
-      this.list.append (action_row);
+      if (property.is_toggle) {
+        Adw.SwitchRow switch_row = new Adw.SwitchRow ();
+        switch_row.set_title (property.name);
+        switch_row.set_active (property.toggle_state);
+        switch_row.notify["active"].connect ((s, p) => {
+          if (property.toggle_callback != null) {
+            property.toggle_callback (switch_row.active);
+          }
+        });
+        this.list.append (switch_row);
+      } else if (property.is_spin) {
+        Adw.SpinRow spin_row = new Adw.SpinRow.with_range (property.spin_min, property.spin_max, property.spin_step);
+        spin_row.set_title (property.name);
+        spin_row.set_value (property.spin_value);
+        spin_row.notify["value"].connect ((s, p) => {
+          if (property.spin_callback != null) {
+            property.spin_callback (spin_row.value);
+          }
+        });
+        this.list.append (spin_row);
+      } else {
+        Adw.ActionRow action_row = new Adw.ActionRow ();
+        action_row.set_title (property.name);
+        action_row.set_subtitle (property.value);
+        action_row.set_subtitle_selectable (true);
+        action_row.set_css_classes ({ "property", "monospace" });
+        this.list.append (action_row);
+      }
     }
   }
 }
@@ -144,10 +169,43 @@ private class DeviceInfoSectionData {
   public class DeviceProperty {
     public string name { get; set; }
     public string value { get; set; }
+    public bool is_toggle { get; set; }
+    public bool toggle_state { get; set; }
+    public ToggleCallback? toggle_callback;
+
+    public bool is_spin { get; set; }
+    public double spin_min { get; set; }
+    public double spin_max { get; set; }
+    public double spin_step { get; set; }
+    public double spin_value { get; set; }
+    public SpinCallback? spin_callback;
 
     public DeviceProperty (string name, string value) {
       this.name = name;
       this.value = value;
+      this.is_toggle = false;
+      this.is_spin = false;
+    }
+
+    public DeviceProperty.with_toggle (string name, bool state, owned ToggleCallback callback) {
+      this.name = name;
+      this.value = "";
+      this.is_toggle = true;
+      this.is_spin = false;
+      this.toggle_state = state;
+      this.toggle_callback = (owned) callback;
+    }
+
+    public DeviceProperty.with_spin (string name, double min, double max, double step, double val, owned SpinCallback callback) {
+      this.name = name;
+      this.value = "";
+      this.is_toggle = false;
+      this.is_spin = true;
+      this.spin_min = min;
+      this.spin_max = max;
+      this.spin_step = step;
+      this.spin_value = val;
+      this.spin_callback = (owned) callback;
     }
   }
 
@@ -161,6 +219,14 @@ private class DeviceInfoSectionData {
 
   public void set (string name, string? val) {
     if (val != null)this.properties.add (new DeviceProperty (name, val));
+  }
+
+  public void set_toggle (string name, bool state, owned ToggleCallback callback) {
+    this.properties.add (new DeviceProperty.with_toggle (name, state, (owned) callback));
+  }
+
+  public void set_spin (string name, double min, double max, double step, double val, owned SpinCallback callback) {
+    this.properties.add (new DeviceProperty.with_spin (name, min, max, step, val, (owned) callback));
   }
 }
 
@@ -596,11 +662,45 @@ public class Wattage.Window : Adw.ApplicationWindow {
 
       DeviceInfoSectionData charging_status = new DeviceInfoSectionData (_("Charging Status"));
 
-      if (device.charge_start_threshold != null)
-        charging_status.set (_("Charge Start Threshold"), "%u%%".printf (device.charge_start_threshold));
+      if (device.charge_threshold_supported) {
+        charging_status.set_toggle (_("Limit Battery Charge"), device.charge_threshold_enabled, (active) => {
+          new Thread<void> ("toggle-charge-threshold", () => {
+            try {
+              device.upower_proxy.enable_charge_threshold (active);
+              Idle.add (() => {
+                this.load_device_list ();
+                return false;
+              });
+            } catch (Error e) {
+              stderr.printf ("Failed to toggle charge threshold: %s\n", e.message);
+              Idle.add (() => {
+                this.main_toast_overlay.add_toast (new Adw.Toast (_("Failed to toggle charge threshold")));
+                return false;
+              });
+            }
+          });
+        });
 
-      if (device.charge_end_threshold != null)
-        charging_status.set (_("Charge End Threshold"), "%u%%".printf (device.charge_end_threshold));
+        if (device.charge_threshold_enabled) {
+          if (device.charge_start_threshold != null) {
+            charging_status.set_spin (_("Charge Start Threshold"), 0, 95, 5, (double) device.charge_start_threshold, (val) => {
+              uint32 uval = (uint32) val;
+              write_sysfs_value (device.native_path, "charge_control_start_threshold", uval);
+              write_sysfs_value (device.native_path, "charge_start_threshold", uval);
+              device.charge_start_threshold = uval;
+            });
+          }
+
+          if (device.charge_end_threshold != null) {
+            charging_status.set_spin (_("Charge End Threshold"), 50, 100, 5, (double) device.charge_end_threshold, (val) => {
+              uint32 uval = (uint32) val;
+              write_sysfs_value (device.native_path, "charge_control_end_threshold", uval);
+              write_sysfs_value (device.native_path, "charge_stop_threshold", uval);
+              device.charge_end_threshold = uval;
+            });
+          }
+        }
+      }
 
       if (device.charge_cycles != null)
         charging_status.set (_("Cycle Count"), device.charge_cycles.to_string ());
@@ -964,5 +1064,18 @@ public class Wattage.Window : Adw.ApplicationWindow {
   [GtkCallback]
   public void on_refresh_clicked (Gtk.Button _) {
     load_device_list ();
+  }
+
+  private static void write_sysfs_value (string battery_name, string file_name, uint32 value) {
+    string path = "/sys/class/power_supply/%s/%s".printf (battery_name, file_name);
+    if (FileUtils.test (path, FileTest.EXISTS)) {
+      FileStream? stream = FileStream.open (path, "w");
+      if (stream != null) {
+        stream.printf ("%u\n", value);
+        stdout.printf ("Successfully wrote %u to %s\n", value, path);
+      } else {
+        stderr.printf ("Failed to open %s for writing\n", path);
+      }
+    }
   }
 }
