@@ -11,6 +11,7 @@ blueprints = custom_target('blueprints',
 wattage_sources = [
   'main.vala',
   'application.vala',
+  'history-dialog.vala',
   'window.vala',
   'utils/numeric-toolkit.vala',
   'utils/device-manager.vala',
@@ -20,6 +21,7 @@ wattage_sources = [
 
 wattage_deps = [
   config_dep,
+  meson.get_compiler('c').find_library('m'),
   dependency('gtk4', version: '>= 4.18.0'),
   dependency('libadwaita-1', version: '>= 1.8.0'),
   dependency('gee-0.8'),

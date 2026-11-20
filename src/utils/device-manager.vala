@@ -65,7 +65,8 @@ namespace DeviceManager {
     public DeviceObject () {}
 
     public bool is_trivial () {
-      return vendor == null &&
+      return !has_history &&
+             vendor == null &&
              model == null &&
              serial == null &&
              technology == null &&

@@ -4,6 +4,7 @@ data/io.github.v81d.Wattage.desktop.in
 data/io.github.v81d.Wattage.gschema.xml
 data/io.github.v81d.Wattage.metainfo.xml.in
 src/application.vala
+src/history-dialog.vala
 src/interfaces/dbus-upower.vala
 src/main.vala
 src/ui/preferences-dialog.blp
